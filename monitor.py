@@ -95,7 +95,7 @@ TEMPLATE = """
 <html>
 <head>
     <title>Service Monitor</title>
-    <meta http-equiv="refresh" content="30">
+    <meta http-equiv=\"refresh\" content=\"30\">
     <style>
         body {
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
@@ -124,6 +124,11 @@ TEMPLATE = """
             border-spacing: 6px;
             margin: 0 auto;
         }
+        h1 { font-size: 2em; margin-bottom: 0; }
+        p { margin-top: 0; color: #555; }
+        h2 { margin-top: 40px; font-size: 1.4em; color: inherit; }
+
+        table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 8px; }
         td {
             border-radius: 6px;
             padding: 6px 10px;
@@ -144,6 +149,7 @@ TEMPLATE = """
     </style>
 </head>
 <body>
+    <button id=\"dark-toggle\" class=\"toggle\">🌓</button>
     <h1>🌐 Internet Service Status Monitor</h1>
     <p><em>{{ timestamp }}</em></p>
 
@@ -152,15 +158,15 @@ TEMPLATE = """
         <table>
             <tr>
             {% for name, url in services.items() %}
-            <td class="{{ STATUS.get(name, {}).get('status', '') }}">
-                {{ name }}<br>
-                {% if STATUS[name]['code'] %}
-                    <small>{{ STATUS[name]['code'] }} – {{ STATUS[name]['response_time'] }} ms</small>
-                {% else %}
-                    <small>No Response</small>
-                {% endif %}
-            </td>
-                {% if loop.index % 4 == 0 %}
+                <td class="{{ STATUS.get(name, {}).get('status', '') }}">
+                    <div class=\"label\">{{ name }}</div>
+                    {% if STATUS[name]['code'] %}
+                        <small>{{ STATUS[name]['code'] }} – {{ STATUS[name]['response_time'] }} ms</small>
+                    {% else %}
+                        <small>No Response</small>
+                    {% endif %}
+                </td>
+                {% if loop.index % 3 == 0 %}
             </tr><tr>
                 {% endif %}
             {% endfor %}
