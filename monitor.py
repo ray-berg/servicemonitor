@@ -95,100 +95,82 @@ TEMPLATE = """
 <html>
 <head>
     <title>Service Monitor</title>
-    <meta http-equiv="refresh" content="30">
+    <meta http-equiv=\"refresh\" content=\"30\">
     <style>
         :root {
-            --bg-color: #fafafa;
-            --text-color: #333;
-            --up-color: #00cc00;
-            --warning-color: #ffbf00;
-            --down-color: #cc0000;
-        }
-        body {
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            padding: 20px;
-            margin: auto;
-            max-width: 1000px;
+            --up: #3cd556;
+            --up-light: #69f080;
+            --warning: #ffbf00;
+            --warning-light: #ffd966;
+            --down: #d32f2f;
+            --down-light: #ff6b6b;
+            --bg: #fafafa;
+            --text: #333;
         }
         body.dark {
-            --bg-color: #222;
-            --text-color: #eee;
-            --up-color: #009900;
-            --warning-color: #c08000;
-            --down-color: #990000;
+            --up: #49e167;
+            --up-light: #5aec7a;
+            --warning: #ffc74d;
+            --warning-light: #ffd280;
+            --down: #ff5252;
+            --down-light: #ff8a8a;
+            --bg: #1e1e1e;
+            --text: #eee;
         }
-        h1 {
-            font-size: 2em;
-            margin-bottom: 0;
+        body {
+            font-family: \"Segoe UI\", Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+            transition: background-color 0.3s, color 0.3s;
         }
         .toggle {
             float: right;
-            padding: 4px 8px;
-            margin-left: 10px;
-            border: 1px solid currentColor;
-            border-radius: 4px;
-            background: none;
-            cursor: pointer;
+            margin-top: -10px;
         }
-        p {
-            font-size: 1em;
-            margin-top: 0;
-            color: #555;
-        }
-        h2 {
-            margin-top: 40px;
-            font-size: 1.4em;
-            color: var(--text-color);
-        }
-        table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 8px;
-            table-layout: fixed;
-        }
+        h1 { font-size: 2em; margin-bottom: 0; }
+        p { margin-top: 0; color: #555; }
+        h2 { margin-top: 40px; font-size: 1.4em; color: inherit; }
+
+        table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 8px; }
         td {
-            border-radius: 6px;
             position: relative;
-            aspect-ratio: 1;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            border-radius: 8px;
+            padding: 0;
+            height: 140px;
+            width: 100px;
+            font-weight: bold;
+            box-shadow: inset 0 4px 8px rgba(0,0,0,0.25), inset 0 -4px 8px rgba(255,255,255,0.2);
             overflow: hidden;
         }
-        td .content {
+        td .label {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 90%;
-            text-align: center;
-            font-weight: bold;
-            font-size: 0.95em;
+            bottom: 4px;
+            left: 0;
+            right: 0;
+            font-size: 0.85em;
+            padding: 0 4px;
         }
-        td::before {
-            content: "";
+        td.up { background: linear-gradient(var(--up-light), var(--up)); }
+        td.warning { background: linear-gradient(var(--warning-light), var(--warning)); }
+        td.down { background: linear-gradient(var(--down-light), var(--down)); }
+        td::after {
+            content: '';
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            border-radius: 6px;
-            background: linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0) 70%);
-            pointer-events: none;
-        }
-        .up {
-            background-color: var(--up-color);
-        }
-        .warning {
-            background-color: var(--warning-color);
-        }
-        .down {
-            background-color: var(--down-color);
+            right: 0;
+            height: 40%;
+            background: rgba(255, 255, 255, 0.35);
+            transform: translateY(-20%) rotate(-20deg);
+            filter: blur(8px);
         }
     </style>
 </head>
 <body>
-    <button id="toggle-dark" class="toggle">🌙 Dark</button>
+    <button id=\"dark-toggle\" class=\"toggle\">🌓</button>
     <h1>🌐 Internet Service Status Monitor</h1>
     <p><em>{{ timestamp }}</em></p>
 
@@ -197,17 +179,15 @@ TEMPLATE = """
         <table>
             <tr>
             {% for name, url in services.items() %}
-            <td class="{{ STATUS.get(name, {}).get('status', '') }}">
-                <div class="content">
-                    {{ name }}<br>
+                <td class="{{ STATUS.get(name, {}).get('status', '') }}">
+                    <div class=\"label\">{{ name }}</div>
                     {% if STATUS[name]['code'] %}
                         <small>{{ STATUS[name]['code'] }} – {{ STATUS[name]['response_time'] }} ms</small>
                     {% else %}
                         <small>No Response</small>
                     {% endif %}
-                </div>
-            </td>
-                {% if loop.index % 4 == 0 %}
+                </td>
+                {% if loop.index % 3 == 0 %}
             </tr><tr>
                 {% endif %}
             {% endfor %}
@@ -215,22 +195,29 @@ TEMPLATE = """
         </table>
     {% endfor %}
     <script>
-        function adjustTextColors() {
+        const toggle = document.getElementById('dark-toggle');
+        function applyMode() {
+            if (localStorage.getItem('dark') === 'true') {
+                document.body.classList.add('dark');
+            } else {
+                document.body.classList.remove('dark');
+            }
+            adjustContrast();
+        }
+        toggle.addEventListener('click', () => {
+            const dark = !(localStorage.getItem('dark') === 'true');
+            localStorage.setItem('dark', dark);
+            applyMode();
+        });
+        function adjustContrast() {
             document.querySelectorAll('td.up, td.warning, td.down').forEach(td => {
                 const bg = window.getComputedStyle(td).backgroundColor;
                 const rgb = bg.match(/\d+/g).map(Number);
                 const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
-                td.style.color = brightness > 150 ? '#000' : '#fff';
+                td.style.color = brightness > 140 ? '#000' : '#fff';
             });
         }
-        adjustTextColors();
-
-        document.getElementById('toggle-dark').addEventListener('click', () => {
-            document.body.classList.toggle('dark');
-            const btn = document.getElementById('toggle-dark');
-            btn.textContent = document.body.classList.contains('dark') ? '☀️ Light' : '🌙 Dark';
-            adjustTextColors();
-        });
+        applyMode();
     </script>
 </body>
 </html>
