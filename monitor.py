@@ -97,15 +97,40 @@ TEMPLATE = """
     <title>Service Monitor</title>
     <meta http-equiv="refresh" content="30">
     <style>
+        :root {
+            --bg-color: #fafafa;
+            --text-color: #333;
+            --up-color: #00cc00;
+            --warning-color: #ffbf00;
+            --down-color: #cc0000;
+        }
         body {
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #fafafa;
+            background-color: var(--bg-color);
+            color: var(--text-color);
             padding: 20px;
-            color: #333;
+            margin: auto;
+            max-width: 1000px;
+        }
+        body.dark {
+            --bg-color: #222;
+            --text-color: #eee;
+            --up-color: #009900;
+            --warning-color: #c08000;
+            --down-color: #990000;
         }
         h1 {
             font-size: 2em;
             margin-bottom: 0;
+        }
+        .toggle {
+            float: right;
+            padding: 4px 8px;
+            margin-left: 10px;
+            border: 1px solid currentColor;
+            border-radius: 4px;
+            background: none;
+            cursor: pointer;
         }
         p {
             font-size: 1em;
@@ -115,7 +140,7 @@ TEMPLATE = """
         h2 {
             margin-top: 40px;
             font-size: 1.4em;
-            color: #222;
+            color: var(--text-color);
         }
         table {
             width: 100%;
@@ -125,23 +150,45 @@ TEMPLATE = """
         }
         td {
             border-radius: 6px;
-            padding: 10px;
+            position: relative;
+            aspect-ratio: 1;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        td .content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
             text-align: center;
             font-weight: bold;
             font-size: 0.95em;
         }
+        td::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 6px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0) 70%);
+            pointer-events: none;
+        }
         .up {
-            background-color: #b5f5b5;
+            background-color: var(--up-color);
         }
         .warning {
-            background-color: #ffef99;
+            background-color: var(--warning-color);
         }
         .down {
-            background-color: #ff9494;
+            background-color: var(--down-color);
         }
     </style>
 </head>
 <body>
+    <button id="toggle-dark" class="toggle">🌙 Dark</button>
     <h1>🌐 Internet Service Status Monitor</h1>
     <p><em>{{ timestamp }}</em></p>
 
@@ -151,12 +198,14 @@ TEMPLATE = """
             <tr>
             {% for name, url in services.items() %}
             <td class="{{ STATUS.get(name, {}).get('status', '') }}">
-                {{ name }}<br>
-                {% if STATUS[name]['code'] %}
-                    <small>{{ STATUS[name]['code'] }} – {{ STATUS[name]['response_time'] }} ms</small>
-                {% else %}
-                    <small>No Response</small>
-                {% endif %}
+                <div class="content">
+                    {{ name }}<br>
+                    {% if STATUS[name]['code'] %}
+                        <small>{{ STATUS[name]['code'] }} – {{ STATUS[name]['response_time'] }} ms</small>
+                    {% else %}
+                        <small>No Response</small>
+                    {% endif %}
+                </div>
             </td>
                 {% if loop.index % 4 == 0 %}
             </tr><tr>
@@ -166,11 +215,21 @@ TEMPLATE = """
         </table>
     {% endfor %}
     <script>
-        document.querySelectorAll('td.up, td.warning, td.down').forEach(td => {
-            const bg = window.getComputedStyle(td).backgroundColor;
-            const rgb = bg.match(/\d+/g).map(Number);
-            const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
-            td.style.color = brightness > 150 ? '#000' : '#fff';
+        function adjustTextColors() {
+            document.querySelectorAll('td.up, td.warning, td.down').forEach(td => {
+                const bg = window.getComputedStyle(td).backgroundColor;
+                const rgb = bg.match(/\d+/g).map(Number);
+                const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+                td.style.color = brightness > 150 ? '#000' : '#fff';
+            });
+        }
+        adjustTextColors();
+
+        document.getElementById('toggle-dark').addEventListener('click', () => {
+            document.body.classList.toggle('dark');
+            const btn = document.getElementById('toggle-dark');
+            btn.textContent = document.body.classList.contains('dark') ? '☀️ Light' : '🌙 Dark';
+            adjustTextColors();
         });
     </script>
 </body>
