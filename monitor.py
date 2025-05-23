@@ -95,20 +95,22 @@ TEMPLATE = """
 <html>
 <head>
     <title>Service Monitor</title>
-    <meta http-equiv="refresh" content="30">
+    <meta http-equiv=\"refresh\" content=\"30\">
     <style>
         body {
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
             background-color: #fafafa;
             padding: 10px;
             color: #333;
+            max-width: 760px;
+            margin: 0 auto;
         }
         h1 {
-            font-size: 2em;
-            margin-bottom: 0;
+            font-size: 1.6em;
+            margin-bottom: 4px;
         }
         p {
-            font-size: 1em;
+            font-size: 0.9em;
             margin-top: 0;
             color: #555;
         }
@@ -127,7 +129,20 @@ TEMPLATE = """
             border-collapse: separate;
             border-spacing: 6px;
             table-layout: fixed;
+            margin-top: 24px;
+            font-size: 1.1em;
+            color: #222;
         }
+        table {
+            border-collapse: separate;
+            border-spacing: 6px;
+            margin: 0 auto;
+        }
+        h1 { font-size: 2em; margin-bottom: 0; }
+        p { margin-top: 0; color: #555; }
+        h2 { margin-top: 40px; font-size: 1.4em; color: inherit; }
+
+        table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 8px; }
         td {
             border-radius: 6px;
             padding: 10px;
@@ -142,6 +157,11 @@ TEMPLATE = """
             flex-direction: column;
             justify-content: center;
             height: 100%;
+            padding: 6px 10px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 0.9em;
+            white-space: nowrap;
         }
         .up {
             background-color: #b5f5b5;
@@ -155,6 +175,7 @@ TEMPLATE = """
     </style>
 </head>
 <body>
+    <button id=\"dark-toggle\" class=\"toggle\">🌓</button>
     <h1>🌐 Internet Service Status Monitor</h1>
     <p><em>{{ timestamp }}</em></p>
 
@@ -191,6 +212,61 @@ TEMPLATE = """
             const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
             td.style.color = brightness > 150 ? '#000' : '#fff';
         });
+        <h2>{{ category }}</h2>
+        <table>
+            <tr>
+            {% for name, url in services.items() %}
+                <td class="{{ STATUS.get(name, {}).get('status', '') }}">
+                    <div class=\"label\">{{ name }}</div>
+                    {% if STATUS[name]['code'] %}
+                        <small>{{ STATUS[name]['code'] }} – {{ STATUS[name]['response_time'] }} ms</small>
+                    {% else %}
+                        <small>No Response</small>
+                    {% endif %}
+                </td>
+                {% if loop.index % 3 == 0 %}
+            </tr><tr>
+                {% endif %}
+            {% endfor %}
+            </tr>
+        </table>
+    {% endfor %}
+    <script>
+        function unifySizes() {
+            document.querySelectorAll('table').forEach(table => {
+                let maxW = 0;
+                let maxH = 0;
+                const cells = table.querySelectorAll('td');
+                cells.forEach(td => {
+                    td.style.width = 'auto';
+                    td.style.height = 'auto';
+                });
+                cells.forEach(td => {
+                    maxW = Math.max(maxW, td.offsetWidth);
+                    maxH = Math.max(maxH, td.offsetHeight);
+                });
+                cells.forEach(td => {
+                    td.style.width = maxW + 'px';
+                    td.style.height = maxH + 'px';
+                });
+            });
+        }
+
+        function adjustTextColor() {
+            document.querySelectorAll('td.up, td.warning, td.down').forEach(td => {
+                const bg = window.getComputedStyle(td).backgroundColor;
+                const rgb = bg.match(/\d+/g).map(Number);
+                const brightness =
+                    (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+                td.style.color = brightness > 150 ? '#000' : '#fff';
+            });
+        }
+
+        window.addEventListener('load', () => {
+            unifySizes();
+            adjustTextColor();
+        });
+        window.addEventListener('resize', unifySizes);
     </script>
 </body>
 </html>
