@@ -115,6 +115,20 @@ TEMPLATE = """
             color: #555;
         }
         h2 {
+            margin: 10px 0;
+            font-size: 1.2em;
+            color: #222;
+        }
+        .categories {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-gap: 16px;
+        }
+        .category table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 6px;
+            table-layout: fixed;
             margin-top: 24px;
             font-size: 1.1em;
             color: #222;
@@ -131,6 +145,18 @@ TEMPLATE = """
         table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 8px; }
         td {
             border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 0.95em;
+            height: 70px;
+            vertical-align: middle;
+        }
+        td .content {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 100%;
             padding: 6px 10px;
             text-align: center;
             font-weight: bold;
@@ -153,7 +179,39 @@ TEMPLATE = """
     <h1>🌐 Internet Service Status Monitor</h1>
     <p><em>{{ timestamp }}</em></p>
 
+    <div class="categories">
     {% for category, services in SERVICES.items() %}
+        <div class="category">
+            <h2>{{ category }}</h2>
+            <table>
+                <tr>
+                {% for name, url in services.items() %}
+                <td class="{{ STATUS.get(name, {}).get('status', '') }}">
+                    <div class="content">
+                        {{ name }}<br>
+                        {% if STATUS[name]['code'] %}
+                            <small>{{ STATUS[name]['code'] }} – {{ STATUS[name]['response_time'] }} ms</small>
+                        {% else %}
+                            <small>No Response</small>
+                        {% endif %}
+                    </div>
+                </td>
+                    {% if loop.index % 4 == 0 %}
+                </tr><tr>
+                    {% endif %}
+                {% endfor %}
+                </tr>
+            </table>
+        </div>
+    {% endfor %}
+    </div>
+    <script>
+        document.querySelectorAll('td.up, td.warning, td.down').forEach(td => {
+            const bg = window.getComputedStyle(td).backgroundColor;
+            const rgb = bg.match(/\d+/g).map(Number);
+            const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+            td.style.color = brightness > 150 ? '#000' : '#fff';
+        });
         <h2>{{ category }}</h2>
         <table>
             <tr>
