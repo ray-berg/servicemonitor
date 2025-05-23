@@ -212,26 +212,6 @@ TEMPLATE = """
             const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
             td.style.color = brightness > 150 ? '#000' : '#fff';
         });
-        <h2>{{ category }}</h2>
-        <table>
-            <tr>
-            {% for name, url in services.items() %}
-                <td class="{{ STATUS.get(name, {}).get('status', '') }}">
-                    <div class=\"label\">{{ name }}</div>
-                    {% if STATUS[name]['code'] %}
-                        <small>{{ STATUS[name]['code'] }} – {{ STATUS[name]['response_time'] }} ms</small>
-                    {% else %}
-                        <small>No Response</small>
-                    {% endif %}
-                </td>
-                {% if loop.index % 3 == 0 %}
-            </tr><tr>
-                {% endif %}
-            {% endfor %}
-            </tr>
-        </table>
-    {% endfor %}
-    <script>
         function unifySizes() {
             document.querySelectorAll('table').forEach(table => {
                 let maxW = 0;
