@@ -1,4 +1,4 @@
-flask
-aiohttp
+quart
 gunicorn
-
+uvicorn
+aiohttp
