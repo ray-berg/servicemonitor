@@ -22,21 +22,21 @@ body.dark {
 .categories {
     display: flex;
     flex-direction: column;
-    gap: 40px;
+    gap: 20px;
 }
 .category h2 {
-    margin-bottom: 10px;
+    margin-bottom: 6px;
 }
 .category .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, 50px);
     gap: 12px;
 }
 .status {
     position: relative;
-    width: 150px;
-    height: 150px;
-    border-radius: 12px;
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
     display: flex;
     flex-direction: column;
     justify-content: center;
