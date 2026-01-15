@@ -17,215 +17,244 @@
 </div>
 {% else %}
 
+<div class="bmc-cards">
 {% for device in devices %}
-<div class="bmc-device">
-    <div class="bmc-header">
-        <div class="bmc-title">
-            <h2 class="bmc-name">{{ device.name }}</h2>
-            <span class="bmc-host">{{ device.host }}{% if device.model %} &bull; {{ device.model }}{% endif %}</span>
+<div class="bmc-card" data-expanded="false">
+    <div class="bmc-card-header" onclick="toggleBmcCard(this.parentElement)">
+        <div class="bmc-card-summary">
+            <div class="bmc-card-title">
+                <span class="bmc-card-name">{{ device.name }}</span>
+                <span class="bmc-card-host">{{ device.host }}</span>
+            </div>
+            <div class="bmc-card-badges">
+                {% if device.error %}
+                <span class="status-badge down">Error</span>
+                {% else %}
+                <span class="status-badge {{ 'up' if device.power == 'On' else 'down' if device.power == 'Off' else 'warning' }}">
+                    {{ device.power }}
+                </span>
+                <span class="status-badge {{ 'up' if device.health == 'OK' else 'warning' if device.health == 'Warning' else 'down' }}">
+                    {{ device.health }}
+                </span>
+                {% if device.storage.drives %}
+                {% set drive_issues = device.storage.drives | selectattr('state', 'ne', 'ok') | list | length %}
+                {% if drive_issues > 0 %}
+                <span class="status-badge warning">{{ drive_issues }} Drive{{ 's' if drive_issues > 1 else '' }}</span>
+                {% endif %}
+                {% endif %}
+                {% endif %}
+            </div>
         </div>
-        <div class="bmc-status-badges">
-            {% if device.error %}
-            <span class="status-badge down">Error</span>
-            {% else %}
-            <span class="status-badge {{ 'up' if device.power == 'On' else 'down' if device.power == 'Off' else 'warning' }}">
-                Power {{ device.power }}
-            </span>
-            <span class="status-badge {{ 'up' if device.health == 'OK' else 'warning' if device.health == 'Warning' else 'down' }}">
-                {{ device.health }}
-            </span>
+        <div class="bmc-card-toggle">
+            <span class="toggle-icon">&#9660;</span>
+        </div>
+    </div>
+
+    <div class="bmc-card-details">
+        {% if device.error %}
+        <div class="bmc-error">
+            <strong>Connection Error:</strong> {{ device.error }}
+        </div>
+        {% else %}
+
+        {% if device.model %}
+        <div class="bmc-model-info">
+            <span class="model-label">Model:</span> {{ device.model }}
+            {% if device.serial %}<span class="serial-label">S/N:</span> {{ device.serial }}{% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Sensors Section -->
+        <div class="bmc-sensors">
+            <!-- Temperature Sensors -->
+            {% if device.sensor_categories.temperature %}
+            <div class="sensor-group">
+                <h3 class="sensor-group-title">Temperature</h3>
+                <div class="sensor-grid">
+                    {% for sensor in device.sensor_categories.temperature %}
+                    <div class="sensor-card {{ sensor.state }}">
+                        <div class="sensor-name">{{ sensor.name }}</div>
+                        <div class="sensor-value">
+                            {{ "%.1f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                            <span class="sensor-unit">{{ sensor.units }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Fan Sensors -->
+            {% if device.sensor_categories.fan %}
+            <div class="sensor-group">
+                <h3 class="sensor-group-title">Fans</h3>
+                <div class="sensor-grid">
+                    {% for sensor in device.sensor_categories.fan %}
+                    <div class="sensor-card {{ sensor.state }}">
+                        <div class="sensor-name">{{ sensor.name }}</div>
+                        <div class="sensor-value">
+                            {{ "%.0f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                            <span class="sensor-unit">{{ sensor.units }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Power Sensors -->
+            {% if device.sensor_categories.power %}
+            <div class="sensor-group">
+                <h3 class="sensor-group-title">Power</h3>
+                <div class="sensor-grid">
+                    {% for sensor in device.sensor_categories.power %}
+                    <div class="sensor-card {{ sensor.state }}">
+                        <div class="sensor-name">{{ sensor.name }}</div>
+                        <div class="sensor-value">
+                            {{ "%.0f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                            <span class="sensor-unit">{{ sensor.units }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Voltage Sensors -->
+            {% if device.sensor_categories.voltage %}
+            <div class="sensor-group">
+                <h3 class="sensor-group-title">Voltages</h3>
+                <div class="sensor-grid">
+                    {% for sensor in device.sensor_categories.voltage %}
+                    <div class="sensor-card {{ sensor.state }}">
+                        <div class="sensor-name">{{ sensor.name }}</div>
+                        <div class="sensor-value">
+                            {{ "%.2f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                            <span class="sensor-unit">{{ sensor.units }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
             {% endif %}
         </div>
-    </div>
 
-    {% if device.error %}
-    <div class="bmc-error">
-        <strong>Connection Error:</strong> {{ device.error }}
-    </div>
-    {% else %}
+        <!-- Storage Section -->
+        {% if device.storage.controllers or device.storage.drives or device.storage.volumes %}
+        <div class="bmc-storage">
+            <h3 class="storage-title">Storage</h3>
 
-    <!-- Sensors Section -->
-    <div class="bmc-sensors">
-        <!-- Temperature Sensors -->
-        {% if device.sensor_categories.temperature %}
-        <div class="sensor-group">
-            <h3 class="sensor-group-title">Temperature</h3>
-            <div class="sensor-grid">
-                {% for sensor in device.sensor_categories.temperature %}
-                <div class="sensor-card {{ sensor.state }}">
-                    <div class="sensor-name">{{ sensor.name }}</div>
-                    <div class="sensor-value">
-                        {{ "%.1f"|format(sensor.value) if sensor.value is not none else "N/A" }}
-                        <span class="sensor-unit">{{ sensor.units }}</span>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Fan Sensors -->
-        {% if device.sensor_categories.fan %}
-        <div class="sensor-group">
-            <h3 class="sensor-group-title">Fans</h3>
-            <div class="sensor-grid">
-                {% for sensor in device.sensor_categories.fan %}
-                <div class="sensor-card {{ sensor.state }}">
-                    <div class="sensor-name">{{ sensor.name }}</div>
-                    <div class="sensor-value">
-                        {{ "%.0f"|format(sensor.value) if sensor.value is not none else "N/A" }}
-                        <span class="sensor-unit">{{ sensor.units }}</span>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Power Sensors -->
-        {% if device.sensor_categories.power %}
-        <div class="sensor-group">
-            <h3 class="sensor-group-title">Power</h3>
-            <div class="sensor-grid">
-                {% for sensor in device.sensor_categories.power %}
-                <div class="sensor-card {{ sensor.state }}">
-                    <div class="sensor-name">{{ sensor.name }}</div>
-                    <div class="sensor-value">
-                        {{ "%.0f"|format(sensor.value) if sensor.value is not none else "N/A" }}
-                        <span class="sensor-unit">{{ sensor.units }}</span>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Voltage Sensors -->
-        {% if device.sensor_categories.voltage %}
-        <div class="sensor-group">
-            <h3 class="sensor-group-title">Voltages</h3>
-            <div class="sensor-grid">
-                {% for sensor in device.sensor_categories.voltage %}
-                <div class="sensor-card {{ sensor.state }}">
-                    <div class="sensor-name">{{ sensor.name }}</div>
-                    <div class="sensor-value">
-                        {{ "%.2f"|format(sensor.value) if sensor.value is not none else "N/A" }}
-                        <span class="sensor-unit">{{ sensor.units }}</span>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-    </div>
-
-    <!-- Storage Section -->
-    {% if device.storage.controllers or device.storage.drives or device.storage.volumes %}
-    <div class="bmc-storage">
-        <h3 class="storage-title">Storage</h3>
-
-        <!-- Storage Controllers -->
-        {% if device.storage.controllers %}
-        <div class="storage-section">
-            <h4 class="storage-section-title">Controllers</h4>
-            <div class="storage-grid">
-                {% for ctrl in device.storage.controllers %}
-                <div class="storage-card {{ ctrl.state }}">
-                    <div class="storage-card-header">
-                        <span class="storage-name">{{ ctrl.name }}</span>
-                        <span class="status-badge {{ ctrl.state }}">{{ ctrl.health }}</span>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Logical Volumes -->
-        {% if device.storage.volumes %}
-        <div class="storage-section">
-            <h4 class="storage-section-title">Volumes</h4>
-            <div class="storage-grid">
-                {% for vol in device.storage.volumes %}
-                <div class="storage-card {{ vol.state }}">
-                    <div class="storage-card-header">
-                        <span class="storage-name">{{ vol.name }}</span>
-                        <span class="status-badge {{ vol.state }}">{{ vol.health }}</span>
-                    </div>
-                    <div class="storage-details">
-                        <span class="raid-badge">{{ vol.raid }}</span>
-                        <span class="storage-capacity">{{ vol.capacity }}</span>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Physical Drives -->
-        {% if device.storage.drives %}
-        <div class="storage-section">
-            <h4 class="storage-section-title">Physical Drives</h4>
-            <div class="storage-grid drives-grid">
-                {% for drive in device.storage.drives %}
-                <div class="drive-card {{ drive.state }}">
-                    <div class="drive-header">
-                        <span class="drive-name">{{ drive.name }}</span>
-                        <span class="status-badge {{ drive.state }}">{{ drive.health }}</span>
-                    </div>
-                    <div class="drive-details">
-                        <div class="drive-info">
-                            <span class="drive-type">{{ drive.type }}</span>
-                            {% if drive.protocol %}
-                            <span class="drive-protocol">{{ drive.protocol }}</span>
-                            {% endif %}
+            <!-- Storage Controllers -->
+            {% if device.storage.controllers %}
+            <div class="storage-section">
+                <h4 class="storage-section-title">Controllers</h4>
+                <div class="storage-grid">
+                    {% for ctrl in device.storage.controllers %}
+                    <div class="storage-card {{ ctrl.state }}">
+                        <div class="storage-card-header">
+                            <span class="storage-name">{{ ctrl.name }}</span>
+                            <span class="status-badge {{ ctrl.state }}">{{ ctrl.health }}</span>
                         </div>
-                        <span class="drive-capacity">{{ drive.capacity }}</span>
                     </div>
-                    {% if drive.predicted_failure is not none %}
-                    <div class="drive-life">
-                        <span class="drive-life-label">Life Remaining:</span>
-                        <span class="drive-life-value {{ 'critical' if drive.predicted_failure < 20 else 'warning' if drive.predicted_failure < 50 else 'ok' }}">
-                            {{ drive.predicted_failure }}%
-                        </span>
-                    </div>
-                    {% endif %}
+                    {% endfor %}
                 </div>
-                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Logical Volumes -->
+            {% if device.storage.volumes %}
+            <div class="storage-section">
+                <h4 class="storage-section-title">Volumes</h4>
+                <div class="storage-grid">
+                    {% for vol in device.storage.volumes %}
+                    <div class="storage-card {{ vol.state }}">
+                        <div class="storage-card-header">
+                            <span class="storage-name">{{ vol.name }}</span>
+                            <span class="status-badge {{ vol.state }}">{{ vol.health }}</span>
+                        </div>
+                        <div class="storage-details">
+                            <span class="raid-badge">{{ vol.raid }}</span>
+                            <span class="storage-capacity">{{ vol.capacity }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Physical Drives -->
+            {% if device.storage.drives %}
+            <div class="storage-section">
+                <h4 class="storage-section-title">Physical Drives</h4>
+                <div class="storage-grid drives-grid">
+                    {% for drive in device.storage.drives %}
+                    <div class="drive-card {{ drive.state }}">
+                        <div class="drive-header">
+                            <span class="drive-name">{{ drive.name }}</span>
+                            <span class="status-badge {{ drive.state }}">{{ drive.health }}</span>
+                        </div>
+                        <div class="drive-details">
+                            <div class="drive-info">
+                                <span class="drive-type">{{ drive.type }}</span>
+                                {% if drive.protocol %}
+                                <span class="drive-protocol">{{ drive.protocol }}</span>
+                                {% endif %}
+                            </div>
+                            <span class="drive-capacity">{{ drive.capacity }}</span>
+                        </div>
+                        {% if drive.predicted_failure is not none %}
+                        <div class="drive-life">
+                            <span class="drive-life-label">Life Remaining:</span>
+                            <span class="drive-life-value {{ 'critical' if drive.predicted_failure < 20 else 'warning' if drive.predicted_failure < 50 else 'ok' }}">
+                                {{ drive.predicted_failure }}%
+                            </span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- SEL Section -->
+        {% if device.sel_entries %}
+        <div class="bmc-sel">
+            <h3 class="sel-title">System Event Log (Recent)</h3>
+            <div class="sel-table-wrapper">
+                <table class="sel-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in device.sel_entries %}
+                        <tr class="sel-entry {{ entry.severity }}">
+                            <td class="sel-timestamp">{{ entry.timestamp }}</td>
+                            <td class="sel-message">{{ entry.message }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
         {% endif %}
-    </div>
-    {% endif %}
 
-    <!-- SEL Section -->
-    {% if device.sel_entries %}
-    <div class="bmc-sel">
-        <h3 class="sel-title">System Event Log (Recent)</h3>
-        <div class="sel-table-wrapper">
-            <table class="sel-table">
-                <thead>
-                    <tr>
-                        <th>Timestamp</th>
-                        <th>Message</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for entry in device.sel_entries %}
-                    <tr class="sel-entry {{ entry.severity }}">
-                        <td class="sel-timestamp">{{ entry.timestamp }}</td>
-                        <td class="sel-message">{{ entry.message }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+        {% endif %}
     </div>
-    {% endif %}
-
-    {% endif %}
 </div>
 {% endfor %}
+</div>
+
+<script>
+function toggleBmcCard(card) {
+    const isExpanded = card.dataset.expanded === 'true';
+    card.dataset.expanded = !isExpanded;
+}
+</script>
 
 {% endif %}
 {% endblock %}
