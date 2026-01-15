@@ -453,52 +453,66 @@ def fetch_ipmi_sensors_sync(host, username, password):
     try:
         conn = ipmi_command.Command(bmc=host, userid=username, password=password)
 
-        # Get sensor data
-        for sensor in conn.get_sensor_data():
-            name = getattr(sensor, 'name', 'Unknown')
-            value = getattr(sensor, 'value', None)
-            units = getattr(sensor, 'units', '') or ''
-            sensor_type = getattr(sensor, 'type', '') or ''
-            health_val = getattr(sensor, 'health', 0)
-            if health_val is None:
-                health_val = 0
-            unavailable = getattr(sensor, 'unavailable', False)
-
-            # Skip unavailable sensors
-            if unavailable:
+        # Get sensor data - iterate with per-sensor error handling
+        # pyghmi can raise errors during iteration for individual sensors
+        sensor_iter = conn.get_sensor_data()
+        while True:
+            try:
+                sensor = next(sensor_iter)
+            except StopIteration:
+                break
+            except Exception:
+                # Skip sensors that cause errors during iteration
                 continue
 
-            # Health is numeric: 0 = ok, non-zero = issue
-            sensor_state = "ok"
-            if health_val != 0:
-                if health_val >= 2:
-                    sensor_state = "critical"
-                    health = "Critical"
-                else:
-                    sensor_state = "warning"
-                    if health == "OK":
-                        health = "Warning"
+            try:
+                name = getattr(sensor, 'name', 'Unknown')
+                value = getattr(sensor, 'value', None)
+                units = getattr(sensor, 'units', '') or ''
+                sensor_type = getattr(sensor, 'type', '') or ''
+                health_val = getattr(sensor, 'health', 0)
+                if health_val is None:
+                    health_val = 0
+                unavailable = getattr(sensor, 'unavailable', False)
 
-            sensor_entry = {
-                "name": name,
-                "value": value,
-                "units": units,
-                "state": sensor_state,
-            }
+                # Skip unavailable sensors
+                if unavailable:
+                    continue
 
-            # Categorize by sensor type or name/units
-            type_lower = sensor_type.lower() if sensor_type else ""
-            units_lower = units.lower() if units else ""
-            name_lower = name.lower() if name else ""
+                # Health is numeric: 0 = ok, non-zero = issue
+                sensor_state = "ok"
+                if health_val != 0:
+                    if health_val >= 2:
+                        sensor_state = "critical"
+                        health = "Critical"
+                    else:
+                        sensor_state = "warning"
+                        if health == "OK":
+                            health = "Warning"
 
-            if "temp" in type_lower or "temp" in name_lower or units_lower in ("c", "°c", "celsius"):
-                sensors["temperature"].append(sensor_entry)
-            elif "fan" in type_lower or "fan" in name_lower or units_lower == "rpm":
-                sensors["fan"].append(sensor_entry)
-            elif "volt" in type_lower or "volt" in name_lower or units_lower == "v":
-                sensors["voltage"].append(sensor_entry)
-            elif "power" in type_lower or "watt" in name_lower or "power" in name_lower or units_lower == "w":
-                sensors["power"].append(sensor_entry)
+                sensor_entry = {
+                    "name": name,
+                    "value": value,
+                    "units": units,
+                    "state": sensor_state,
+                }
+
+                # Categorize by sensor type or name/units
+                type_lower = sensor_type.lower() if sensor_type else ""
+                units_lower = units.lower() if units else ""
+                name_lower = name.lower() if name else ""
+
+                if "temp" in type_lower or "temp" in name_lower or units_lower in ("c", "°c", "celsius"):
+                    sensors["temperature"].append(sensor_entry)
+                elif "fan" in type_lower or "fan" in name_lower or units_lower == "rpm":
+                    sensors["fan"].append(sensor_entry)
+                elif "volt" in type_lower or "volt" in name_lower or units_lower == "v":
+                    sensors["voltage"].append(sensor_entry)
+                elif "power" in type_lower or "watt" in name_lower or "power" in name_lower or units_lower == "w":
+                    sensors["power"].append(sensor_entry)
+            except Exception:
+                # Skip sensors that cause processing errors
+                continue
 
         conn.ipmi_session.logout()
         return sensors, health, None
