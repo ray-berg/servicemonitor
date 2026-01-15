@@ -21,6 +21,11 @@ try:
 except ImportError:
     BMC_DEVICES = []
 
+try:
+    from config import SNMP_DEVICES
+except ImportError:
+    SNMP_DEVICES = []
+
 app = Quart(__name__)
 
 
@@ -416,6 +421,309 @@ async def get_all_bmc_data():
     return results
 
 # =============================================================================
+# SNMP INTEGRATION
+# =============================================================================
+
+try:
+    from pysnmp.hlapi.asyncio import (
+        getCmd, bulkCmd, SnmpEngine, CommunityData, UdpTransportTarget,
+        ContextData, ObjectType, ObjectIdentity
+    )
+    SNMP_AVAILABLE = True
+except ImportError:
+    SNMP_AVAILABLE = False
+
+# Standard OIDs
+SNMP_OIDS = {
+    "sysDescr": "1.3.6.1.2.1.1.1.0",
+    "sysName": "1.3.6.1.2.1.1.5.0",
+    "sysUpTime": "1.3.6.1.2.1.1.3.0",
+    "sysContact": "1.3.6.1.2.1.1.4.0",
+    "sysLocation": "1.3.6.1.2.1.1.6.0",
+}
+
+# Table OIDs for bulk walks
+SNMP_TABLES = {
+    "hrProcessorLoad": "1.3.6.1.2.1.25.3.3.1.2",  # CPU load per processor
+    "hrStorageDescr": "1.3.6.1.2.1.25.2.3.1.3",   # Storage description
+    "hrStorageSize": "1.3.6.1.2.1.25.2.3.1.5",    # Storage size
+    "hrStorageUsed": "1.3.6.1.2.1.25.2.3.1.6",    # Storage used
+    "hrStorageAllocationUnits": "1.3.6.1.2.1.25.2.3.1.4",  # Allocation units
+    "hrStorageType": "1.3.6.1.2.1.25.2.3.1.2",    # Storage type
+    "ifDescr": "1.3.6.1.2.1.2.2.1.2",             # Interface description
+    "ifOperStatus": "1.3.6.1.2.1.2.2.1.8",        # Interface status
+    "ifSpeed": "1.3.6.1.2.1.2.2.1.5",             # Interface speed
+    "ifInOctets": "1.3.6.1.2.1.2.2.1.10",         # Bytes in
+    "ifOutOctets": "1.3.6.1.2.1.2.2.1.16",        # Bytes out
+}
+
+def format_uptime(timeticks):
+    """Convert SNMP timeticks (1/100 seconds) to human-readable format."""
+    if timeticks is None:
+        return "Unknown"
+    seconds = int(timeticks) // 100
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    if days > 0:
+        return f"{days}d {hours}h {minutes}m"
+    elif hours > 0:
+        return f"{hours}h {minutes}m {secs}s"
+    else:
+        return f"{minutes}m {secs}s"
+
+def format_speed(speed_bps):
+    """Format interface speed to human-readable format."""
+    if speed_bps is None or speed_bps == 0:
+        return "Unknown"
+    if speed_bps >= 1000000000:
+        return f"{speed_bps // 1000000000} Gbps"
+    elif speed_bps >= 1000000:
+        return f"{speed_bps // 1000000} Mbps"
+    elif speed_bps >= 1000:
+        return f"{speed_bps // 1000} Kbps"
+    return f"{speed_bps} bps"
+
+def format_octets(octets):
+    """Format octet count to human-readable format."""
+    if octets is None:
+        return "N/A"
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if octets < 1024:
+            return f"{octets:.1f} {unit}"
+        octets /= 1024
+    return f"{octets:.1f} PB"
+
+async def snmp_get(host, port, community, oids):
+    """Perform SNMP GET for multiple OIDs."""
+    results = {}
+    try:
+        engine = SnmpEngine()
+        transport = UdpTransportTarget((host, port), timeout=5, retries=1)
+        for name, oid in oids.items():
+            errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
+                engine,
+                CommunityData(community),
+                transport,
+                ContextData(),
+                ObjectType(ObjectIdentity(oid))
+            )
+            if errorIndication or errorStatus:
+                results[name] = None
+            else:
+                for varBind in varBinds:
+                    results[name] = varBind[1].prettyPrint() if hasattr(varBind[1], 'prettyPrint') else str(varBind[1])
+    except Exception as e:
+        return None, str(e)
+    return results, None
+
+async def snmp_bulk_walk(host, port, community, oid_base, max_rows=100):
+    """Perform SNMP bulk walk on a table OID."""
+    results = {}
+    try:
+        engine = SnmpEngine()
+        transport = UdpTransportTarget((host, port), timeout=5, retries=1)
+        count = 0
+        async for errorIndication, errorStatus, errorIndex, varBinds in bulkCmd(
+            engine,
+            CommunityData(community),
+            transport,
+            ContextData(),
+            0, 25,  # nonRepeaters, maxRepetitions
+            ObjectType(ObjectIdentity(oid_base)),
+        ):
+            if errorIndication or errorStatus:
+                break
+            for varBind in varBinds:
+                oid_str = str(varBind[0])
+                if not oid_str.startswith(oid_base):
+                    return results
+                # Extract the index from the OID
+                index = oid_str[len(oid_base) + 1:] if len(oid_str) > len(oid_base) else "0"
+                value = varBind[1]
+                if hasattr(value, 'prettyPrint'):
+                    results[index] = value.prettyPrint()
+                else:
+                    results[index] = str(value)
+            count += 1
+            if count >= max_rows:
+                break
+    except Exception:
+        pass
+    return results
+
+async def fetch_snmp_data(device):
+    """Fetch comprehensive SNMP data from a device."""
+    result = {
+        "name": device["name"],
+        "host": device["host"],
+        "status": "down",
+        "error": None,
+        "system": {
+            "description": "",
+            "name": "",
+            "uptime": "",
+            "contact": "",
+            "location": "",
+        },
+        "cpu": {
+            "count": 0,
+            "average": 0,
+            "cores": [],
+        },
+        "memory": {
+            "total": 0,
+            "used": 0,
+            "percent": 0,
+        },
+        "disks": [],
+        "interfaces": [],
+    }
+
+    if not SNMP_AVAILABLE:
+        result["error"] = "pysnmp-lextudio not installed"
+        return result
+
+    host = device["host"]
+    port = device.get("port", 161)
+    community = device.get("community", "public")
+
+    # Fetch system info
+    sys_data, error = await snmp_get(host, port, community, SNMP_OIDS)
+    if error or sys_data is None:
+        result["error"] = error or "SNMP connection failed"
+        return result
+
+    result["status"] = "up"
+    result["system"]["description"] = sys_data.get("sysDescr", "")
+    result["system"]["name"] = sys_data.get("sysName", "")
+    result["system"]["contact"] = sys_data.get("sysContact", "")
+    result["system"]["location"] = sys_data.get("sysLocation", "")
+
+    # Parse uptime
+    uptime_raw = sys_data.get("sysUpTime", "0")
+    try:
+        uptime_ticks = int(uptime_raw)
+        result["system"]["uptime"] = format_uptime(uptime_ticks)
+    except (ValueError, TypeError):
+        result["system"]["uptime"] = str(uptime_raw)
+
+    # Fetch CPU load
+    cpu_loads = await snmp_bulk_walk(host, port, community, SNMP_TABLES["hrProcessorLoad"])
+    if cpu_loads:
+        cores = []
+        for idx, load in cpu_loads.items():
+            try:
+                cores.append(int(load))
+            except (ValueError, TypeError):
+                pass
+        if cores:
+            result["cpu"]["cores"] = cores
+            result["cpu"]["count"] = len(cores)
+            result["cpu"]["average"] = round(sum(cores) / len(cores), 1)
+
+    # Fetch storage data
+    storage_descr = await snmp_bulk_walk(host, port, community, SNMP_TABLES["hrStorageDescr"])
+    storage_size = await snmp_bulk_walk(host, port, community, SNMP_TABLES["hrStorageSize"])
+    storage_used = await snmp_bulk_walk(host, port, community, SNMP_TABLES["hrStorageUsed"])
+    storage_units = await snmp_bulk_walk(host, port, community, SNMP_TABLES["hrStorageAllocationUnits"])
+    storage_type = await snmp_bulk_walk(host, port, community, SNMP_TABLES["hrStorageType"])
+
+    # Process storage entries
+    for idx in storage_descr:
+        descr = storage_descr.get(idx, "")
+        type_oid = storage_type.get(idx, "")
+
+        # Filter to physical memory and fixed disks
+        # hrStorageRam = 1.3.6.1.2.1.25.2.1.2
+        # hrStorageFixedDisk = 1.3.6.1.2.1.25.2.1.4
+        is_ram = "1.3.6.1.2.1.25.2.1.2" in type_oid
+        is_disk = "1.3.6.1.2.1.25.2.1.4" in type_oid
+
+        try:
+            size_blocks = int(storage_size.get(idx, 0))
+            used_blocks = int(storage_used.get(idx, 0))
+            alloc_units = int(storage_units.get(idx, 1))
+
+            size_bytes = size_blocks * alloc_units
+            used_bytes = used_blocks * alloc_units
+            size_mb = size_bytes / (1024 * 1024)
+            used_mb = used_bytes / (1024 * 1024)
+            percent = round((used_bytes / size_bytes) * 100, 1) if size_bytes > 0 else 0
+
+            if is_ram:
+                result["memory"]["total"] = round(size_mb)
+                result["memory"]["used"] = round(used_mb)
+                result["memory"]["percent"] = percent
+            elif is_disk and size_mb > 100:  # Filter out tiny pseudo-filesystems
+                result["disks"].append({
+                    "mount": descr,
+                    "total": round(size_mb / 1024, 1),  # GB
+                    "used": round(used_mb / 1024, 1),   # GB
+                    "percent": percent,
+                })
+        except (ValueError, TypeError):
+            pass
+
+    # Fetch interface data
+    if_descr = await snmp_bulk_walk(host, port, community, SNMP_TABLES["ifDescr"])
+    if_status = await snmp_bulk_walk(host, port, community, SNMP_TABLES["ifOperStatus"])
+    if_speed = await snmp_bulk_walk(host, port, community, SNMP_TABLES["ifSpeed"])
+    if_in = await snmp_bulk_walk(host, port, community, SNMP_TABLES["ifInOctets"])
+    if_out = await snmp_bulk_walk(host, port, community, SNMP_TABLES["ifOutOctets"])
+
+    for idx in if_descr:
+        name = if_descr.get(idx, f"Interface {idx}")
+        # Skip loopback and virtual interfaces
+        if name.lower() in ("lo", "loopback"):
+            continue
+
+        status_val = if_status.get(idx, "2")
+        try:
+            status = "up" if int(status_val) == 1 else "down"
+        except (ValueError, TypeError):
+            status = "unknown"
+
+        try:
+            speed = int(if_speed.get(idx, 0))
+        except (ValueError, TypeError):
+            speed = 0
+
+        try:
+            in_octets = int(if_in.get(idx, 0))
+        except (ValueError, TypeError):
+            in_octets = 0
+
+        try:
+            out_octets = int(if_out.get(idx, 0))
+        except (ValueError, TypeError):
+            out_octets = 0
+
+        # Only include interfaces with traffic or that are up
+        if status == "up" or in_octets > 0 or out_octets > 0:
+            result["interfaces"].append({
+                "name": name,
+                "status": status,
+                "speed": format_speed(speed),
+                "in_octets": in_octets,
+                "out_octets": out_octets,
+                "in_formatted": format_octets(in_octets),
+                "out_formatted": format_octets(out_octets),
+            })
+
+    return result
+
+async def get_all_snmp_data():
+    """Fetch all SNMP device data concurrently."""
+    if not SNMP_DEVICES:
+        return []
+
+    tasks = [fetch_snmp_data(device) for device in SNMP_DEVICES]
+    results = await asyncio.gather(*tasks)
+    return results
+
+# =============================================================================
 # ROUTES
 # =============================================================================
 
@@ -468,6 +776,18 @@ async def bmc():
                                   timestamp=now,
                                   active_page='bmc',
                                   error=None if devices else "No BMC devices configured")
+
+@app.route('/snmp')
+async def snmp():
+    """SNMP monitoring page."""
+    devices = await get_all_snmp_data()
+    now = datetime.now().strftime("Status as of %B %d, %Y at %I:%M %p")
+
+    return await render_template('snmp.html',
+                                  devices=devices,
+                                  timestamp=now,
+                                  active_page='snmp',
+                                  error=None if devices else "No SNMP devices configured")
 
 # =============================================================================
 # MAIN

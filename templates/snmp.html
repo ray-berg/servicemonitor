@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}SNMP - Service Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">SNMP Monitoring</h1>
+    <p class="page-subtitle">System metrics via SNMP for legacy servers</p>
+</div>
+
+{% if error and not devices %}
+<div class="error-message">
+    <strong>Configuration Required:</strong> {{ error }}
+    <p style="margin-top: 0.5rem; font-size: 0.875rem;">
+        Add SNMP devices to config.py to enable monitoring
+    </p>
+</div>
+{% else %}
+
+<div class="snmp-cards">
+{% for device in devices %}
+<div class="snmp-card" data-expanded="false">
+    <div class="snmp-card-header" onclick="toggleSnmpCard(this.parentElement)">
+        <div class="snmp-card-summary">
+            <div class="snmp-card-title">
+                <span class="snmp-card-name">{{ device.name }}</span>
+                <span class="snmp-card-host">{{ device.host }}</span>
+            </div>
+            <div class="snmp-card-badges">
+                {% if device.error %}
+                <span class="status-badge down">Error</span>
+                {% else %}
+                <span class="status-badge {{ 'up' if device.status == 'up' else 'down' }}">
+                    {{ device.status | upper }}
+                </span>
+                {% if device.cpu.average > 0 %}
+                <span class="status-badge {{ 'down' if device.cpu.average > 90 else 'warning' if device.cpu.average > 70 else 'up' }}">
+                    CPU {{ device.cpu.average }}%
+                </span>
+                {% endif %}
+                {% if device.memory.percent > 0 %}
+                <span class="status-badge {{ 'down' if device.memory.percent > 90 else 'warning' if device.memory.percent > 80 else 'up' }}">
+                    Mem {{ device.memory.percent }}%
+                </span>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <div class="snmp-card-toggle">
+            <span class="toggle-icon">&#9660;</span>
+        </div>
+    </div>
+
+    <div class="snmp-card-details">
+        {% if device.error %}
+        <div class="snmp-error">
+            <strong>Connection Error:</strong> {{ device.error }}
+        </div>
+        {% else %}
+
+        <!-- System Info Section -->
+        {% if device.system.name or device.system.description %}
+        <div class="snmp-section">
+            <h3 class="snmp-section-title">System Information</h3>
+            <div class="snmp-info-grid">
+                {% if device.system.name %}
+                <div class="snmp-info-item">
+                    <span class="snmp-info-label">Hostname</span>
+                    <span class="snmp-info-value">{{ device.system.name }}</span>
+                </div>
+                {% endif %}
+                {% if device.system.uptime %}
+                <div class="snmp-info-item">
+                    <span class="snmp-info-label">Uptime</span>
+                    <span class="snmp-info-value">{{ device.system.uptime }}</span>
+                </div>
+                {% endif %}
+                {% if device.system.location %}
+                <div class="snmp-info-item">
+                    <span class="snmp-info-label">Location</span>
+                    <span class="snmp-info-value">{{ device.system.location }}</span>
+                </div>
+                {% endif %}
+                {% if device.system.contact %}
+                <div class="snmp-info-item">
+                    <span class="snmp-info-label">Contact</span>
+                    <span class="snmp-info-value">{{ device.system.contact }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% if device.system.description %}
+            <div class="snmp-description">
+                {{ device.system.description }}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- CPU Section -->
+        {% if device.cpu.count > 0 %}
+        <div class="snmp-section">
+            <h3 class="snmp-section-title">CPU Usage</h3>
+            <div class="snmp-metric">
+                <div class="metric-header">
+                    <span class="metric-label">Average ({{ device.cpu.count }} cores)</span>
+                    <span class="metric-value">{{ device.cpu.average }}%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill cpu" style="width: {{ device.cpu.average }}%"></div>
+                </div>
+            </div>
+            {% if device.cpu.cores | length <= 8 %}
+            <div class="cpu-cores">
+                {% for load in device.cpu.cores %}
+                <div class="cpu-core">
+                    <span class="core-label">Core {{ loop.index0 }}</span>
+                    <div class="progress-bar small">
+                        <div class="progress-fill cpu" style="width: {{ load }}%"></div>
+                    </div>
+                    <span class="core-value">{{ load }}%</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Memory Section -->
+        {% if device.memory.total > 0 %}
+        <div class="snmp-section">
+            <h3 class="snmp-section-title">Memory</h3>
+            <div class="snmp-metric">
+                <div class="metric-header">
+                    <span class="metric-label">{{ device.memory.used }} MB / {{ device.memory.total }} MB</span>
+                    <span class="metric-value">{{ device.memory.percent }}%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill memory" style="width: {{ device.memory.percent }}%"></div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Disk Section -->
+        {% if device.disks %}
+        <div class="snmp-section">
+            <h3 class="snmp-section-title">Disk Usage</h3>
+            <div class="disk-list">
+                {% for disk in device.disks %}
+                <div class="snmp-metric">
+                    <div class="metric-header">
+                        <span class="metric-label">{{ disk.mount }}</span>
+                        <span class="metric-value">{{ disk.used }} / {{ disk.total }} GB ({{ disk.percent }}%)</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill storage" style="width: {{ disk.percent }}%"></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Interfaces Section -->
+        {% if device.interfaces %}
+        <div class="snmp-section">
+            <h3 class="snmp-section-title">Network Interfaces</h3>
+            <div class="interface-table-wrapper">
+                <table class="interface-table">
+                    <thead>
+                        <tr>
+                            <th>Interface</th>
+                            <th>Status</th>
+                            <th>Speed</th>
+                            <th>In</th>
+                            <th>Out</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for iface in device.interfaces %}
+                        <tr>
+                            <td class="iface-name">{{ iface.name }}</td>
+                            <td>
+                                <span class="status-badge {{ 'up' if iface.status == 'up' else 'down' }}">
+                                    {{ iface.status }}
+                                </span>
+                            </td>
+                            <td class="iface-speed">{{ iface.speed }}</td>
+                            <td class="iface-traffic">{{ iface.in_formatted }}</td>
+                            <td class="iface-traffic">{{ iface.out_formatted }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+</div>
+
+<script>
+function toggleSnmpCard(card) {
+    const isExpanded = card.dataset.expanded === 'true';
+    card.dataset.expanded = !isExpanded;
+}
+</script>
+
+{% endif %}
+{% endblock %}

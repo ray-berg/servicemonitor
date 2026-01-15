@@ -4,16 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Service Monitor{% endblock %}</title>
-    <meta http-equiv="refresh" content="30">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <nav class="navbar">
-        <div class="nav-brand">Service Monitor</div>
+        <div class="nav-brand">
+            Service Monitor
+            <span id="refresh-indicator" class="refresh-indicator" title="Auto-refresh active"></span>
+        </div>
         <div class="nav-links">
             <a href="/" class="nav-link {% if active_page == 'services' %}active{% endif %}">Services</a>
             <a href="/proxmox" class="nav-link {% if active_page == 'proxmox' %}active{% endif %}">Proxmox</a>
             <a href="/bmc" class="nav-link {% if active_page == 'bmc' %}active{% endif %}">BMC</a>
+            <a href="/snmp" class="nav-link {% if active_page == 'snmp' %}active{% endif %}">SNMP</a>
         </div>
         <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
             <span class="icon-sun">&#9728;</span>
@@ -21,16 +24,17 @@
         </button>
     </nav>
 
-    <main class="container">
+    <main class="container" id="main-content">
         {% block content %}{% endblock %}
     </main>
 
     <footer class="footer">
-        <p>{{ timestamp }}</p>
+        <p id="timestamp">{{ timestamp }}</p>
     </footer>
 
     <script>
     (function() {
+        // Theme toggle
         const body = document.body;
         const toggle = document.getElementById('theme-toggle');
         const mode = localStorage.getItem('theme');
@@ -44,6 +48,56 @@
             const isDark = body.classList.contains('dark');
             localStorage.setItem('theme', isDark ? 'dark' : 'light');
         });
+
+        // Background auto-refresh
+        const REFRESH_INTERVAL = 30000; // 30 seconds
+        const indicator = document.getElementById('refresh-indicator');
+        const mainContent = document.getElementById('main-content');
+        const timestampEl = document.getElementById('timestamp');
+
+        async function refreshContent() {
+            indicator.classList.add('refreshing');
+            try {
+                const response = await fetch(window.location.href);
+                if (response.ok) {
+                    const html = await response.text();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+
+                    // Update main content
+                    const newContent = doc.getElementById('main-content');
+                    if (newContent) {
+                        // Preserve expanded card states
+                        const expandedCards = {};
+                        mainContent.querySelectorAll('[data-expanded="true"]').forEach(card => {
+                            const name = card.querySelector('.bmc-card-name, .snmp-card-name');
+                            if (name) expandedCards[name.textContent] = true;
+                        });
+
+                        mainContent.innerHTML = newContent.innerHTML;
+
+                        // Restore expanded states
+                        mainContent.querySelectorAll('[data-expanded]').forEach(card => {
+                            const name = card.querySelector('.bmc-card-name, .snmp-card-name');
+                            if (name && expandedCards[name.textContent]) {
+                                card.dataset.expanded = 'true';
+                            }
+                        });
+                    }
+
+                    // Update timestamp
+                    const newTimestamp = doc.getElementById('timestamp');
+                    if (newTimestamp) {
+                        timestampEl.innerHTML = newTimestamp.innerHTML;
+                    }
+                }
+            } catch (e) {
+                console.error('Auto-refresh failed:', e);
+            }
+            indicator.classList.remove('refreshing');
+        }
+
+        setInterval(refreshContent, REFRESH_INTERVAL);
     })();
     </script>
 </body>

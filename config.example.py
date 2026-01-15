@@ -7,7 +7,7 @@ PROXMOX_TOKEN_ID = "user@pam!tokenname"       # API token ID
 PROXMOX_TOKEN_SECRET = "your-token-secret"    # API token secret
 PROXMOX_VERIFY_SSL = False                    # Set True if using valid SSL cert
 
-# BMC/IPMI Configuration
+# BMC/Redfish Configuration
 # Add your BMC devices here with per-device credentials
 BMC_DEVICES = [
     {
@@ -21,5 +21,16 @@ BMC_DEVICES = [
         "host": "192.168.1.11",
         "username": "admin",
         "password": "password",
+    },
+]
+
+# SNMP Configuration (for older servers without Redfish support)
+# Uses SNMPv2c with community string
+SNMP_DEVICES = [
+    {
+        "name": "Old Server",
+        "host": "192.168.1.20",
+        "community": "public",
+        "port": 161,
     },
 ]
