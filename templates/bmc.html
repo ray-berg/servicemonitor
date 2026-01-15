@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}BMC - Service Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">BMC / IPMI Status</h1>
+    <p class="page-subtitle">Server hardware monitoring via IPMI</p>
+</div>
+
+{% if error and not devices %}
+<div class="error-message">
+    <strong>Configuration Required:</strong> {{ error }}
+    <p style="margin-top: 0.5rem; font-size: 0.875rem;">
+        Add BMC devices to config.py to enable monitoring
+    </p>
+</div>
+{% else %}
+
+{% for device in devices %}
+<div class="bmc-device">
+    <div class="bmc-header">
+        <div class="bmc-title">
+            <h2 class="bmc-name">{{ device.name }}</h2>
+            <span class="bmc-host">{{ device.host }}</span>
+        </div>
+        <div class="bmc-power-status">
+            {% if device.error %}
+            <span class="status-badge down">Error</span>
+            {% elif device.power == 'on' %}
+            <span class="status-badge up">Power On</span>
+            {% elif device.power == 'off' %}
+            <span class="status-badge down">Power Off</span>
+            {% else %}
+            <span class="status-badge warning">Unknown</span>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if device.error %}
+    <div class="bmc-error">
+        <strong>Connection Error:</strong> {{ device.error }}
+    </div>
+    {% else %}
+
+    <!-- Sensors Section -->
+    {% if device.sensor_categories %}
+    <div class="bmc-sensors">
+        <!-- Temperature Sensors -->
+        {% if device.sensor_categories.temperature %}
+        <div class="sensor-group">
+            <h3 class="sensor-group-title">Temperature</h3>
+            <div class="sensor-grid">
+                {% for sensor in device.sensor_categories.temperature %}
+                <div class="sensor-card {{ sensor.state }}">
+                    <div class="sensor-name">{{ sensor.name }}</div>
+                    <div class="sensor-value">
+                        {{ "%.1f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                        <span class="sensor-unit">{{ sensor.units }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Fan Sensors -->
+        {% if device.sensor_categories.fan %}
+        <div class="sensor-group">
+            <h3 class="sensor-group-title">Fans</h3>
+            <div class="sensor-grid">
+                {% for sensor in device.sensor_categories.fan %}
+                <div class="sensor-card {{ sensor.state }}">
+                    <div class="sensor-name">{{ sensor.name }}</div>
+                    <div class="sensor-value">
+                        {{ "%.0f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                        <span class="sensor-unit">{{ sensor.units }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Voltage Sensors -->
+        {% if device.sensor_categories.voltage %}
+        <div class="sensor-group">
+            <h3 class="sensor-group-title">Voltages</h3>
+            <div class="sensor-grid">
+                {% for sensor in device.sensor_categories.voltage %}
+                <div class="sensor-card {{ sensor.state }}">
+                    <div class="sensor-name">{{ sensor.name }}</div>
+                    <div class="sensor-value">
+                        {{ "%.2f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                        <span class="sensor-unit">{{ sensor.units }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Power Sensors -->
+        {% if device.sensor_categories.power %}
+        <div class="sensor-group">
+            <h3 class="sensor-group-title">Power</h3>
+            <div class="sensor-grid">
+                {% for sensor in device.sensor_categories.power %}
+                <div class="sensor-card {{ sensor.state }}">
+                    <div class="sensor-name">{{ sensor.name }}</div>
+                    <div class="sensor-value">
+                        {{ "%.0f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                        <span class="sensor-unit">{{ sensor.units }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Other Sensors -->
+        {% if device.sensor_categories.other %}
+        <div class="sensor-group">
+            <h3 class="sensor-group-title">Other Sensors</h3>
+            <div class="sensor-grid">
+                {% for sensor in device.sensor_categories.other %}
+                <div class="sensor-card {{ sensor.state }}">
+                    <div class="sensor-name">{{ sensor.name }}</div>
+                    <div class="sensor-value">
+                        {{ sensor.value if sensor.value is not none else "N/A" }}
+                        <span class="sensor-unit">{{ sensor.units }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- SEL Section -->
+    {% if device.sel_entries %}
+    <div class="bmc-sel">
+        <h3 class="sel-title">System Event Log (Recent)</h3>
+        <div class="sel-table-wrapper">
+            <table class="sel-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in device.sel_entries %}
+                    <tr class="sel-entry {{ entry.severity }}">
+                        <td class="sel-timestamp">{{ entry.timestamp }}</td>
+                        <td class="sel-message">{{ entry.message }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% endif %}
+</div>
+{% endfor %}
+
+{% endif %}
+{% endblock %}
