@@ -33,6 +33,11 @@
                 <span class="status-badge {{ 'up' if device.status == 'up' else 'down' }}">
                     {{ device.status | upper }}
                 </span>
+                {% if device.health and device.health != 'Unknown' %}
+                <span class="status-badge {{ 'up' if device.health == 'OK' else 'warning' if device.health == 'Warning' else 'down' }}">
+                    {{ device.health }}
+                </span>
+                {% endif %}
                 {% if device.cpu.average > 0 %}
                 <span class="status-badge {{ 'down' if device.cpu.average > 90 else 'warning' if device.cpu.average > 70 else 'up' }}">
                     CPU {{ device.cpu.average }}%
@@ -192,6 +197,92 @@
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Hardware Sensors (IPMI) -->
+        {% if device.sensor_categories and (device.sensor_categories.temperature or device.sensor_categories.fan or device.sensor_categories.voltage or device.sensor_categories.power) %}
+        <div class="snmp-section">
+            <h3 class="snmp-section-title">Hardware Sensors (IPMI)</h3>
+
+            <!-- Temperature Sensors -->
+            {% if device.sensor_categories.temperature %}
+            <div class="sensor-group">
+                <h4 class="storage-section-title">Temperature</h4>
+                <div class="sensor-grid">
+                    {% for sensor in device.sensor_categories.temperature %}
+                    <div class="sensor-card {{ sensor.state }}">
+                        <div class="sensor-name">{{ sensor.name }}</div>
+                        <div class="sensor-value">
+                            {{ "%.1f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                            <span class="sensor-unit">{{ sensor.units }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Fan Sensors -->
+            {% if device.sensor_categories.fan %}
+            <div class="sensor-group">
+                <h4 class="storage-section-title">Fans</h4>
+                <div class="sensor-grid">
+                    {% for sensor in device.sensor_categories.fan %}
+                    <div class="sensor-card {{ sensor.state }}">
+                        <div class="sensor-name">{{ sensor.name }}</div>
+                        <div class="sensor-value">
+                            {{ "%.0f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                            <span class="sensor-unit">{{ sensor.units }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Voltage Sensors -->
+            {% if device.sensor_categories.voltage %}
+            <div class="sensor-group">
+                <h4 class="storage-section-title">Voltages</h4>
+                <div class="sensor-grid">
+                    {% for sensor in device.sensor_categories.voltage %}
+                    <div class="sensor-card {{ sensor.state }}">
+                        <div class="sensor-name">{{ sensor.name }}</div>
+                        <div class="sensor-value">
+                            {{ "%.2f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                            <span class="sensor-unit">{{ sensor.units }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Power Sensors -->
+            {% if device.sensor_categories.power %}
+            <div class="sensor-group">
+                <h4 class="storage-section-title">Power</h4>
+                <div class="sensor-grid">
+                    {% for sensor in device.sensor_categories.power %}
+                    <div class="sensor-card {{ sensor.state }}">
+                        <div class="sensor-name">{{ sensor.name }}</div>
+                        <div class="sensor-value">
+                            {{ "%.0f"|format(sensor.value) if sensor.value is not none else "N/A" }}
+                            <span class="sensor-unit">{{ sensor.units }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% elif device.ipmi_error %}
+        <div class="snmp-section">
+            <h3 class="snmp-section-title">Hardware Sensors (IPMI)</h3>
+            <div class="snmp-error">
+                <strong>IPMI Error:</strong> {{ device.ipmi_error }}
             </div>
         </div>
         {% endif %}

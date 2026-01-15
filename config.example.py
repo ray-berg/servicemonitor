@@ -26,11 +26,15 @@ BMC_DEVICES = [
 
 # SNMP Configuration (for older servers without Redfish support)
 # Uses SNMPv2c with community string
+# Optional: Add IPMI credentials for hardware health monitoring
 SNMP_DEVICES = [
     {
         "name": "Old Server",
         "host": "192.168.1.20",
         "community": "public",
         "port": 161,
+        # Optional IPMI credentials for sensor data
+        "ipmi_username": "admin",
+        "ipmi_password": "password",
     },
 ]

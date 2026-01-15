@@ -3,3 +3,4 @@ gunicorn
 uvicorn
 aiohttp
 pysnmp-lextudio
+pyghmi

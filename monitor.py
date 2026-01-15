@@ -433,6 +433,76 @@ try:
 except ImportError:
     SNMP_AVAILABLE = False
 
+# IPMI support for SNMP devices (hardware sensors)
+try:
+    from pyghmi.ipmi import command as ipmi_command
+    IPMI_AVAILABLE = True
+except ImportError:
+    IPMI_AVAILABLE = False
+
+def fetch_ipmi_sensors_sync(host, username, password):
+    """Fetch IPMI sensor data synchronously."""
+    sensors = {
+        "temperature": [],
+        "fan": [],
+        "voltage": [],
+        "power": [],
+    }
+    health = "OK"
+
+    try:
+        conn = ipmi_command.Command(bmc=host, userid=username, password=password)
+
+        # Get sensor data
+        for sensor in conn.get_sensor_data():
+            name = sensor.get("name", "Unknown")
+            value = sensor.get("value")
+            units = sensor.get("units", "")
+            state = sensor.get("health", "ok")
+
+            if state and state.lower() not in ("ok", "nominal"):
+                health = "Warning" if health == "OK" else health
+                if "critical" in state.lower() or "fail" in state.lower():
+                    health = "Critical"
+
+            sensor_state = "ok"
+            if state:
+                if "critical" in state.lower() or "fail" in state.lower():
+                    sensor_state = "critical"
+                elif "warning" in state.lower() or state.lower() not in ("ok", "nominal"):
+                    sensor_state = "warning"
+
+            sensor_entry = {
+                "name": name,
+                "value": value,
+                "units": units,
+                "state": sensor_state,
+            }
+
+            # Categorize by type
+            units_lower = units.lower() if units else ""
+            name_lower = name.lower()
+
+            if "temp" in name_lower or units_lower in ("c", "°c", "celsius"):
+                sensors["temperature"].append(sensor_entry)
+            elif "fan" in name_lower or units_lower in ("rpm", "percent"):
+                sensors["fan"].append(sensor_entry)
+            elif "volt" in name_lower or units_lower == "v":
+                sensors["voltage"].append(sensor_entry)
+            elif "watt" in name_lower or "power" in name_lower or units_lower == "w":
+                sensors["power"].append(sensor_entry)
+
+        conn.ipmi_session.logout()
+        return sensors, health, None
+
+    except Exception as e:
+        return sensors, "Unknown", str(e)
+
+async def fetch_ipmi_sensors(host, username, password):
+    """Async wrapper for IPMI sensor fetching."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, fetch_ipmi_sensors_sync, host, username, password)
+
 # Standard OIDs
 SNMP_OIDS = {
     "sysDescr": "1.3.6.1.2.1.1.1.0",
@@ -559,6 +629,7 @@ async def fetch_snmp_data(device):
         "name": device["name"],
         "host": device["host"],
         "status": "down",
+        "health": "Unknown",
         "error": None,
         "system": {
             "description": "",
@@ -579,6 +650,13 @@ async def fetch_snmp_data(device):
         },
         "disks": [],
         "interfaces": [],
+        "sensor_categories": {
+            "temperature": [],
+            "fan": [],
+            "voltage": [],
+            "power": [],
+        },
+        "ipmi_error": None,
     }
 
     if not SNMP_AVAILABLE:
@@ -711,6 +789,17 @@ async def fetch_snmp_data(device):
                 "in_formatted": format_octets(in_octets),
                 "out_formatted": format_octets(out_octets),
             })
+
+    # Fetch IPMI sensors if credentials are provided
+    ipmi_user = device.get("ipmi_username")
+    ipmi_pass = device.get("ipmi_password")
+    if ipmi_user and ipmi_pass and IPMI_AVAILABLE:
+        sensors, health, ipmi_error = await fetch_ipmi_sensors(host, ipmi_user, ipmi_pass)
+        result["sensor_categories"] = sensors
+        result["health"] = health
+        result["ipmi_error"] = ipmi_error
+    elif ipmi_user and ipmi_pass and not IPMI_AVAILABLE:
+        result["ipmi_error"] = "pyghmi not installed"
 
     return result
 
