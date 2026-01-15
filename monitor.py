@@ -218,95 +218,193 @@ def process_vm_data(vm):
     }
 
 # =============================================================================
-# BMC/IPMI INTEGRATION
+# BMC/REDFISH INTEGRATION
 # =============================================================================
 
-def fetch_bmc_status_sync(device):
-    """Fetch BMC status synchronously (called in thread pool)."""
-    from pyghmi.ipmi import command
+async def fetch_redfish_endpoint(session, base_url, endpoint, auth):
+    """Fetch data from a Redfish API endpoint."""
+    url = f"{base_url}{endpoint}"
+    try:
+        async with session.get(url, auth=auth, ssl=False,
+                               timeout=aiohttp.ClientTimeout(total=15)) as response:
+            if response.status == 200:
+                return await response.json()
+            return None
+    except Exception:
+        return None
+
+async def fetch_bmc_status(device):
+    """Fetch BMC status via Redfish API."""
+    base_url = f"https://{device['host']}/redfish/v1"
+    auth = aiohttp.BasicAuth(device["username"], device["password"])
 
     result = {
         "name": device["name"],
         "host": device["host"],
-        "power": None,
-        "sensors": [],
+        "power": "unknown",
+        "health": "Unknown",
+        "model": "",
+        "serial": "",
+        "sensor_categories": {
+            "temperature": [],
+            "fan": [],
+            "voltage": [],
+            "power": [],
+        },
+        "storage": {
+            "controllers": [],
+            "drives": [],
+            "volumes": [],
+        },
         "sel_entries": [],
         "error": None,
     }
 
     try:
-        ipmi_conn = command.Command(
-            bmc=device["host"],
-            userid=device["username"],
-            password=device["password"],
-        )
+        connector = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            # Fetch all data concurrently
+            system_data, thermal_data, power_data, storage_data, sel_data = await asyncio.gather(
+                fetch_redfish_endpoint(session, base_url, "/Systems/1", auth),
+                fetch_redfish_endpoint(session, base_url, "/Chassis/1/Thermal", auth),
+                fetch_redfish_endpoint(session, base_url, "/Chassis/1/Power", auth),
+                fetch_redfish_endpoint(session, base_url, "/Systems/1/Storage", auth),
+                fetch_redfish_endpoint(session, base_url, "/Managers/1/LogServices/SEL/Entries", auth),
+            )
 
-        # Get power status
-        try:
-            power_state = ipmi_conn.get_power()
-            result["power"] = power_state.get("powerstate", "unknown")
-        except Exception as e:
-            result["power"] = "unknown"
+            # Process system info
+            if system_data:
+                result["power"] = system_data.get("PowerState", "Unknown")
+                result["health"] = system_data.get("Status", {}).get("Health", "Unknown")
+                result["model"] = system_data.get("Model", "")
+                result["serial"] = system_data.get("SerialNumber", "")
+            else:
+                result["error"] = "Unable to connect to Redfish API"
+                return result
 
-        # Get sensor data
-        try:
-            sensors = ipmi_conn.get_sensor_data()
-            sensor_list = []
-            for sensor in sensors:
-                sensor_info = {
-                    "name": sensor.name if hasattr(sensor, 'name') else str(sensor),
-                    "value": None,
-                    "units": "",
-                    "state": "ok",
-                    "type": "unknown",
-                }
-                if hasattr(sensor, 'value') and sensor.value is not None:
-                    sensor_info["value"] = sensor.value
-                if hasattr(sensor, 'units'):
-                    sensor_info["units"] = sensor.units or ""
-                if hasattr(sensor, 'health'):
-                    health = sensor.health
-                    if health == 0:
-                        sensor_info["state"] = "ok"
-                    elif health == 1:
-                        sensor_info["state"] = "warning"
-                    else:
-                        sensor_info["state"] = "critical"
-                if hasattr(sensor, 'type'):
-                    sensor_info["type"] = sensor.type or "unknown"
-                # Only include sensors with actual values
-                if sensor_info["value"] is not None:
-                    sensor_list.append(sensor_info)
-            result["sensors"] = sensor_list
-        except Exception as e:
-            result["sensors"] = []
+            # Process thermal data (temperatures and fans)
+            if thermal_data:
+                # Temperatures
+                for temp in thermal_data.get("Temperatures", []):
+                    if temp.get("ReadingCelsius") is not None:
+                        health = temp.get("Status", {}).get("Health", "OK")
+                        result["sensor_categories"]["temperature"].append({
+                            "name": temp.get("Name", "Unknown"),
+                            "value": temp.get("ReadingCelsius"),
+                            "units": "°C",
+                            "state": "ok" if health == "OK" else "warning" if health == "Warning" else "critical",
+                        })
+                # Fans
+                for fan in thermal_data.get("Fans", []):
+                    reading = fan.get("Reading") or fan.get("ReadingRPM")
+                    if reading is not None:
+                        health = fan.get("Status", {}).get("Health", "OK")
+                        units = fan.get("ReadingUnits", "RPM")
+                        result["sensor_categories"]["fan"].append({
+                            "name": fan.get("Name", "Unknown"),
+                            "value": reading,
+                            "units": units if units else "RPM",
+                            "state": "ok" if health == "OK" else "warning" if health == "Warning" else "critical",
+                        })
 
-        # Get SEL (System Event Log) entries
-        try:
-            sel = ipmi_conn.get_event_log()
-            sel_entries = []
-            for entry in list(sel)[-10:]:  # Last 10 entries
-                sel_entry = {
-                    "id": getattr(entry, 'id', None),
-                    "timestamp": str(getattr(entry, 'timestamp', '')),
-                    "message": getattr(entry, 'message', str(entry)),
-                    "severity": getattr(entry, 'severity', 'info'),
-                }
-                sel_entries.append(sel_entry)
-            result["sel_entries"] = sel_entries
-        except Exception as e:
-            result["sel_entries"] = []
+            # Process power data
+            if power_data:
+                # Power consumption
+                for pc in power_data.get("PowerControl", []):
+                    watts = pc.get("PowerConsumedWatts")
+                    if watts is not None:
+                        result["sensor_categories"]["power"].append({
+                            "name": pc.get("Name", "Power Consumption"),
+                            "value": watts,
+                            "units": "W",
+                            "state": "ok",
+                        })
+                # Voltages
+                for volt in power_data.get("Voltages", []):
+                    reading = volt.get("ReadingVolts")
+                    if reading is not None:
+                        health = volt.get("Status", {}).get("Health", "OK")
+                        result["sensor_categories"]["voltage"].append({
+                            "name": volt.get("Name", "Unknown"),
+                            "value": reading,
+                            "units": "V",
+                            "state": "ok" if health == "OK" else "warning" if health == "Warning" else "critical",
+                        })
 
-        ipmi_conn.ipmi_session.logout()
+            # Process storage data
+            if storage_data:
+                members = storage_data.get("Members", [])
+                for member in members:
+                    member_url = member.get("@odata.id", "")
+                    if member_url:
+                        controller_data = await fetch_redfish_endpoint(session, f"https://{device['host']}", member_url, auth)
+                        if controller_data:
+                            # Controller info
+                            controller_health = controller_data.get("Status", {}).get("Health", "Unknown")
+                            result["storage"]["controllers"].append({
+                                "name": controller_data.get("Name", "Storage Controller"),
+                                "health": controller_health,
+                                "state": "ok" if controller_health == "OK" else "warning" if controller_health == "Warning" else "critical",
+                            })
+
+                            # Get drives
+                            drives_link = controller_data.get("Drives", [])
+                            for drive_ref in drives_link:
+                                drive_url = drive_ref.get("@odata.id", "")
+                                if drive_url:
+                                    drive_data = await fetch_redfish_endpoint(session, f"https://{device['host']}", drive_url, auth)
+                                    if drive_data:
+                                        drive_health = drive_data.get("Status", {}).get("Health", "Unknown")
+                                        capacity_bytes = drive_data.get("CapacityBytes", 0)
+                                        capacity_gb = round(capacity_bytes / (1024**3), 1) if capacity_bytes else 0
+                                        result["storage"]["drives"].append({
+                                            "name": drive_data.get("Name", "Unknown Drive"),
+                                            "capacity": f"{capacity_gb} GB",
+                                            "health": drive_health,
+                                            "state": "ok" if drive_health == "OK" else "warning" if drive_health == "Warning" else "critical",
+                                            "type": drive_data.get("MediaType", "Unknown"),
+                                            "protocol": drive_data.get("Protocol", ""),
+                                            "predicted_failure": drive_data.get("PredictedMediaLifeLeftPercent", None),
+                                        })
+
+                            # Get volumes
+                            volumes_link = controller_data.get("Volumes", {}).get("@odata.id", "")
+                            if volumes_link:
+                                volumes_data = await fetch_redfish_endpoint(session, f"https://{device['host']}", volumes_link, auth)
+                                if volumes_data:
+                                    for vol_ref in volumes_data.get("Members", []):
+                                        vol_url = vol_ref.get("@odata.id", "")
+                                        if vol_url:
+                                            vol_data = await fetch_redfish_endpoint(session, f"https://{device['host']}", vol_url, auth)
+                                            if vol_data:
+                                                vol_health = vol_data.get("Status", {}).get("Health", "Unknown")
+                                                vol_capacity = vol_data.get("CapacityBytes", 0)
+                                                vol_capacity_gb = round(vol_capacity / (1024**3), 1) if vol_capacity else 0
+                                                raid_types = vol_data.get("RAIDType", "Unknown")
+                                                result["storage"]["volumes"].append({
+                                                    "name": vol_data.get("Name", "Unknown Volume"),
+                                                    "capacity": f"{vol_capacity_gb} GB",
+                                                    "raid": raid_types,
+                                                    "health": vol_health,
+                                                    "state": "ok" if vol_health == "OK" else "warning" if vol_health == "Warning" else "critical",
+                                                })
+
+            # Process SEL entries
+            if sel_data:
+                entries = sel_data.get("Members", [])[-10:]  # Last 10 entries
+                for entry in entries:
+                    severity = entry.get("Severity", "OK")
+                    result["sel_entries"].append({
+                        "id": entry.get("Id", ""),
+                        "timestamp": entry.get("Created", ""),
+                        "message": entry.get("Message", str(entry)),
+                        "severity": "critical" if severity == "Critical" else "warning" if severity == "Warning" else "info",
+                    })
 
     except Exception as e:
         result["error"] = str(e)
 
     return result
-
-async def fetch_bmc_status(device):
-    """Fetch BMC status asynchronously."""
-    return await asyncio.to_thread(fetch_bmc_status_sync, device)
 
 async def get_all_bmc_data():
     """Fetch all BMC data concurrently."""
@@ -316,33 +414,6 @@ async def get_all_bmc_data():
     tasks = [fetch_bmc_status(device) for device in BMC_DEVICES]
     results = await asyncio.gather(*tasks)
     return results
-
-def categorize_sensors(sensors):
-    """Categorize sensors by type."""
-    categories = {
-        "temperature": [],
-        "fan": [],
-        "voltage": [],
-        "power": [],
-        "other": [],
-    }
-
-    for sensor in sensors:
-        name_lower = sensor["name"].lower()
-        sensor_type = sensor.get("type", "").lower()
-
-        if "temp" in name_lower or sensor_type == "temperature":
-            categories["temperature"].append(sensor)
-        elif "fan" in name_lower or sensor_type == "fan":
-            categories["fan"].append(sensor)
-        elif "volt" in name_lower or sensor_type == "voltage":
-            categories["voltage"].append(sensor)
-        elif "watt" in name_lower or "power" in name_lower or sensor_type == "power":
-            categories["power"].append(sensor)
-        else:
-            categories["other"].append(sensor)
-
-    return categories
 
 # =============================================================================
 # ROUTES
@@ -388,22 +459,8 @@ async def proxmox():
 
 @app.route('/bmc')
 async def bmc():
-    """BMC/IPMI status page."""
+    """BMC/Redfish status page."""
     devices = await get_all_bmc_data()
-
-    # Process each device to categorize sensors
-    for device in devices:
-        if device.get("sensors"):
-            device["sensor_categories"] = categorize_sensors(device["sensors"])
-        else:
-            device["sensor_categories"] = {
-                "temperature": [],
-                "fan": [],
-                "voltage": [],
-                "power": [],
-                "other": [],
-            }
-
     now = datetime.now().strftime("Status as of %B %d, %Y at %I:%M %p")
 
     return await render_template('bmc.html',

@@ -2,4 +2,3 @@ quart
 gunicorn
 uvicorn
 aiohttp
-pyghmi
