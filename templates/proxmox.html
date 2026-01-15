@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Proxmox - Service Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Proxmox Cluster</h1>
+    <p class="page-subtitle">Virtual machines, containers, and node status</p>
+</div>
+
+{% if error %}
+<div class="error-message">
+    <strong>Connection Error:</strong> {{ error }}
+    <p style="margin-top: 0.5rem; font-size: 0.875rem;">
+        Please verify your Proxmox API configuration in monitor.py
+    </p>
+</div>
+{% else %}
+
+<!-- Nodes Section -->
+<div class="section">
+    <h2 class="section-title">
+        <span>Cluster Nodes</span>
+        <span class="category-count">{{ nodes|length }} nodes</span>
+    </h2>
+    <div class="nodes-grid">
+        {% for node in nodes %}
+        <div class="node-card">
+            <div class="node-header">
+                <span class="node-name">{{ node.name }}</span>
+                <span class="status-badge {{ node.status }}">
+                    {{ 'Online' if node.status == 'up' else 'Offline' }}
+                </span>
+            </div>
+            <div class="node-metrics">
+                <div class="metric">
+                    <div class="metric-header">
+                        <span class="metric-label">CPU</span>
+                        <span class="metric-value">{{ node.cpu_percent }}%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill cpu" style="width: {{ node.cpu_percent }}%"></div>
+                    </div>
+                </div>
+                <div class="metric">
+                    <div class="metric-header">
+                        <span class="metric-label">Memory</span>
+                        <span class="metric-value">{{ node.mem_used }} / {{ node.mem_total }}</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill memory" style="width: {{ node.mem_percent }}%"></div>
+                    </div>
+                </div>
+                <div class="metric">
+                    <div class="metric-header">
+                        <span class="metric-label">Storage</span>
+                        <span class="metric-value">{{ node.disk_used }} / {{ node.disk_total }}</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill storage" style="width: {{ node.disk_percent }}%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Virtual Machines Section -->
+{% if vms %}
+<div class="section">
+    <h2 class="section-title">
+        <span>Virtual Machines</span>
+        <span class="category-count">{{ vms|length }} VMs</span>
+    </h2>
+    <div class="vms-grid">
+        {% for vm in vms %}
+        <div class="vm-card">
+            <div class="vm-header">
+                <div>
+                    <div class="vm-name">{{ vm.name }}</div>
+                    <div class="vm-id">VMID: {{ vm.vmid }}</div>
+                </div>
+                <span class="vm-type qemu">VM</span>
+            </div>
+            <div class="vm-info">
+                <div class="vm-info-row">
+                    <span>Status</span>
+                    <span class="status-badge {{ vm.status }}">
+                        {{ 'Running' if vm.status == 'up' else 'Stopped' }}
+                    </span>
+                </div>
+                {% if vm.status == 'up' %}
+                <div class="vm-info-row">
+                    <span>CPU</span>
+                    <span>{{ vm.cpu_percent }}%</span>
+                </div>
+                <div class="vm-info-row">
+                    <span>Memory</span>
+                    <span>{{ vm.mem_used }}</span>
+                </div>
+                {% else %}
+                <div class="vm-info-row">
+                    <span>Allocated</span>
+                    <span>{{ vm.mem_total }}</span>
+                </div>
+                {% endif %}
+            </div>
+            <div class="vm-node">Node: {{ vm.node }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Containers Section -->
+{% if containers %}
+<div class="section">
+    <h2 class="section-title">
+        <span>LXC Containers</span>
+        <span class="category-count">{{ containers|length }} containers</span>
+    </h2>
+    <div class="vms-grid">
+        {% for ct in containers %}
+        <div class="vm-card">
+            <div class="vm-header">
+                <div>
+                    <div class="vm-name">{{ ct.name }}</div>
+                    <div class="vm-id">CTID: {{ ct.vmid }}</div>
+                </div>
+                <span class="vm-type lxc">LXC</span>
+            </div>
+            <div class="vm-info">
+                <div class="vm-info-row">
+                    <span>Status</span>
+                    <span class="status-badge {{ ct.status }}">
+                        {{ 'Running' if ct.status == 'up' else 'Stopped' }}
+                    </span>
+                </div>
+                {% if ct.status == 'up' %}
+                <div class="vm-info-row">
+                    <span>CPU</span>
+                    <span>{{ ct.cpu_percent }}%</span>
+                </div>
+                <div class="vm-info-row">
+                    <span>Memory</span>
+                    <span>{{ ct.mem_used }}</span>
+                </div>
+                {% else %}
+                <div class="vm-info-row">
+                    <span>Allocated</span>
+                    <span>{{ ct.mem_total }}</span>
+                </div>
+                {% endif %}
+            </div>
+            <div class="vm-node">Node: {{ ct.node }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if not vms and not containers %}
+<div class="section">
+    <p style="color: var(--text-secondary); text-align: center; padding: 2rem;">
+        No virtual machines or containers found in this cluster.
+    </p>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
